@@ -1,0 +1,50 @@
+[project]
+name = "voice-rag-agent"
+version = "0.1.0"
+description = "Zero-Latency Voice Knowledge-Base RAG System for CCaaS"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # LLM - Gemini
+    "google-genai>=1.0.0",
+    # Retrieval
+    "faiss-cpu>=1.7.4",
+    "sentence-transformers>=2.2.2",
+    "rank-bm25>=0.2.2",
+    # Reranking
+    "transformers>=4.36.0",
+    # Document Processing
+    "pypdf>=3.17.0",
+    "langchain-text-splitters>=0.0.1",
+    # API & Async
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+    # Utilities
+    "numpy>=1.26.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "aiofiles>=23.2.1",
+    "rich>=13.7.0",
+    "httpx>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-benchmark>=4.0.0",
+    "httpx>=0.26.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

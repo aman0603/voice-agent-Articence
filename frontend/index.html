@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice RAG Agent - Dell PowerEdge Support</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--bg-card) 0%, #0f172a 100%);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo svg {
+            width: 40px;
+            height: 40px;
+            fill: var(--primary);
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--primary), #60a5fa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(34, 197, 94, 0.1);
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 2rem;
+            gap: 2rem;
+        }
+
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-header h2 {
+            font-size: 1.125rem;
+            font-weight: 500;
+        }
+
+        .metrics-badge {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .metric {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .metric-value {
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: white;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: #334155;
+        }
+
+        .message .timestamp {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 0.5rem;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 1rem;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 100% { opacity: 0.4; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .input-section {
+            padding: 1.5rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .text-input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        #text-input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #text-input:focus {
+            border-color: var(--primary);
+        }
+
+        .voice-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .voice-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4);
+        }
+
+        .voice-btn.recording {
+            background: linear-gradient(135deg, var(--accent-red), #dc2626);
+            animation: recording-pulse 1.5s infinite;
+        }
+
+        @keyframes recording-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        }
+
+        .voice-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .send-btn {
+            padding: 1rem 1.5rem;
+            background: var(--primary);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+        }
+
+        .card h3 {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .latency-display {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .latency-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .latency-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .latency-value {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .latency-value.good { color: var(--accent-green); }
+        .latency-value.warning { color: var(--accent-amber); }
+        .latency-value.bad { color: var(--accent-red); }
+
+        .pipeline-stages {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .stage {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg-dark);
+            border-radius: 8px;
+        }
+
+        .stage-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+        }
+
+        .stage-icon.asr { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .stage-icon.retrieval { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .stage-icon.llm { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+        .stage-icon.tts { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+        .stage-info {
+            flex: 1;
+        }
+
+        .stage-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .stage-time {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .example-queries {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .example-query {
+            padding: 0.75rem 1rem;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .example-query:hover {
+            border-color: var(--primary);
+            color: var(--text-primary);
+        }
+
+        /* Audio Player */
+        .audio-player {
+            margin-top: 0.75rem;
+            padding: 0.5rem;
+            background: var(--bg-dark);
+            border-radius: 8px;
+        }
+
+        .audio-player audio {
+            width: 100%;
+            height: 32px;
+        }
+
+        /* Waveform display when recording */
+        .waveform-container {
+            display: none;
+            height: 60px;
+            background: var(--bg-dark);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .waveform-container.active {
+            display: block;
+        }
+
+        #waveform {
+            width: 100%;
+            height: 100%;
+        }
+
+        @media (max-width: 1024px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="currentColor" stroke-width="2"/>
+                <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+                <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <h1>Voice RAG Agent</h1>
+        </div>
+        <div class="status-bar">
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="connection-status">Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <section class="chat-section">
+            <div class="chat-header">
+                <h2>Dell PowerEdge Technical Support</h2>
+                <div class="metrics-badge">
+                    <div class="metric">
+                        <span>TTFB:</span>
+                        <span class="metric-value" id="ttfb-display">--</span>
+                    </div>
+                    <div class="metric">
+                        <span>Total:</span>
+                        <span class="metric-value" id="total-latency">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-messages" id="chat-messages">
+                <div class="message assistant">
+                    <p>Hello! I'm your Dell PowerEdge technical support assistant. Ask me about power supply issues, RAID configuration, network troubleshooting, or any other server-related questions.</p>
+                    <div class="timestamp">Just now</div>
+                </div>
+            </div>
+
+            <div class="waveform-container" id="waveform-container">
+                <canvas id="waveform"></canvas>
+            </div>
+
+            <div class="input-section">
+                <div class="text-input-wrapper">
+                    <input type="text" id="text-input" placeholder="Type your question or click the mic to speak..." />
+                </div>
+                <button class="voice-btn" id="voice-btn" title="Hold to speak">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+                <button class="send-btn" id="send-btn">Send</button>
+            </div>
+        </section>
+
+        <aside class="sidebar">
+            <div class="card">
+                <h3>Latency Breakdown</h3>
+                <div class="latency-display">
+                    <div class="latency-item">
+                        <span class="latency-label">ASR</span>
+                        <span class="latency-value good" id="asr-latency">--</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">Intent Detection</span>
+                        <span class="latency-value good" id="intent-latency">--</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">Retrieval</span>
+                        <span class="latency-value good" id="retrieval-latency">--</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">LLM</span>
+                        <span class="latency-value good" id="llm-latency">--</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">TTS</span>
+                        <span class="latency-value good" id="tts-latency">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Pipeline Status</h3>
+                <div class="pipeline-stages" id="pipeline-stages">
+                    <div class="stage">
+                        <div class="stage-icon asr">🎤</div>
+                        <div class="stage-info">
+                            <div class="stage-name">ASR (Whisper)</div>
+                            <div class="stage-time">Streaming transcription</div>
+                        </div>
+                    </div>
+                    <div class="stage">
+                        <div class="stage-icon retrieval">🔍</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Retrieval</div>
+                            <div class="stage-time">Hybrid search + rerank</div>
+                        </div>
+                    </div>
+                    <div class="stage">
+                        <div class="stage-icon llm">🤖</div>
+                        <div class="stage-info">
+                            <div class="stage-name">LLM (Gemini)</div>
+                            <div class="stage-time">Streaming generation</div>
+                        </div>
+                    </div>
+                    <div class="stage">
+                        <div class="stage-icon tts">🔊</div>
+                        <div class="stage-info">
+                            <div class="stage-name">TTS (Piper)</div>
+                            <div class="stage-time">Voice synthesis</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Example Queries</h3>
+                <div class="example-queries">
+                    <div class="example-query" onclick="setQuery('What are the power redundancy modes?')">
+                        What are the power redundancy modes?
+                    </div>
+                    <div class="example-query" onclick="setQuery('How do I configure RAID 5?')">
+                        How do I configure RAID 5?
+                    </div>
+                    <div class="example-query" onclick="setQuery('The power LED is blinking amber')">
+                        The power LED is blinking amber
+                    </div>
+                    <div class="example-query" onclick="setQuery('How do I replace a failed drive?')">
+                        How do I replace a failed drive?
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // Configuration
+        const API_BASE = 'http://localhost:8000';
+        
+        // DOM Elements
+        const chatMessages = document.getElementById('chat-messages');
+        const textInput = document.getElementById('text-input');
+        const sendBtn = document.getElementById('send-btn');
+        const voiceBtn = document.getElementById('voice-btn');
+        const waveformContainer = document.getElementById('waveform-container');
+        const waveformCanvas = document.getElementById('waveform');
+        const connectionStatus = document.getElementById('connection-status');
+        
+        // State
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let audioContext = null;
+        let analyser = null;
+        let animationId = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            checkServerStatus();
+            setInterval(checkServerStatus, 30000);
+        });
+
+        // Check server status
+        async function checkServerStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                const data = await response.json();
+                connectionStatus.textContent = 'Connected';
+                document.querySelector('.status-dot').style.background = 'var(--accent-green)';
+            } catch (error) {
+                connectionStatus.textContent = 'Disconnected';
+                document.querySelector('.status-dot').style.background = 'var(--accent-red)';
+            }
+        }
+
+        // Set query from example
+        function setQuery(query) {
+            textInput.value = query;
+            textInput.focus();
+        }
+
+        // Send text query with streaming
+        async function sendTextQuery() {
+            const query = textInput.value.trim();
+            if (!query) return;
+
+            // Add user message
+            addMessage(query, 'user');
+            textInput.value = '';
+            sendBtn.disabled = true;
+
+            // Create message element for streaming response
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message assistant';
+            messageEl.innerHTML = '<p class="streaming-text"></p><div class="timestamp"></div>';
+            chatMessages.appendChild(messageEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            const textEl = messageEl.querySelector('.streaming-text');
+            const timestampEl = messageEl.querySelector('.timestamp');
+            
+            let fullText = '';
+            let ttfb = 0;
+            let totalLatency = 0;
+            
+            // Queue for TTS - speak sentences in order
+            const speechQueue = [];
+            let isSpeakingQueue = false;
+
+            async function processSpeechQueue() {
+                if (isSpeakingQueue) return;
+                isSpeakingQueue = true;
+                
+                while (speechQueue.length > 0) {
+                    const sentence = speechQueue.shift();
+                    await speakSentence(sentence);
+                }
+                
+                isSpeakingQueue = false;
+            }
+
+            function speakSentence(text) {
+                return new Promise((resolve) => {
+                    if (!speechSynthesis || !text.trim()) {
+                        resolve();
+                        return;
+                    }
+
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 1.1;  // Slightly faster
+                    utterance.pitch = 1.0;
+                    
+                    const voices = speechSynthesis.getVoices();
+                    const preferredVoice = voices.find(v => 
+                        v.name.includes('Google') || v.name.includes('Microsoft')
+                    ) || voices.find(v => v.lang.startsWith('en'));
+                    if (preferredVoice) utterance.voice = preferredVoice;
+                    
+                    utterance.onend = resolve;
+                    utterance.onerror = resolve;
+                    
+                    speechSynthesis.speak(utterance);
+                });
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/query/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query, session_id: 'web-session' })
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                
+                                if (data.type === 'filler') {
+                                    // Speak filler immediately
+                                    speechQueue.push(data.text);
+                                    processSpeechQueue();
+                                    textEl.textContent = data.text + ' ';
+                                    fullText = data.text + ' ';
+                                } else if (data.type === 'ttfb') {
+                                    ttfb = data.ttfb_ms;
+                                    updateMetrics({ ttfb: ttfb });
+                                    document.getElementById('llm-latency').textContent = `${Math.round(ttfb)}ms`;
+                                } else if (data.type === 'sentence') {
+                                    // Add to display and speak
+                                    fullText += data.text + ' ';
+                                    textEl.textContent = fullText;
+                                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    
+                                    // Queue for speaking
+                                    speechQueue.push(data.text);
+                                    processSpeechQueue();
+                                } else if (data.type === 'done') {
+                                    totalLatency = data.total_latency_ms;
+                                    updateMetrics({ total: totalLatency, ttfb: ttfb });
+                                    timestampEl.textContent = `${new Date().toLocaleTimeString()} • TTFB: ${Math.round(ttfb)}ms • Total: ${Math.round(totalLatency)}ms`;
+                                }
+                            } catch (e) {
+                                console.log('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                textEl.textContent = `Error: ${error.message}`;
+                speechQueue.push('Sorry, there was an error processing your request.');
+                processSpeechQueue();
+            }
+
+            sendBtn.disabled = false;
+        }
+
+        // Add message to chat
+        function addMessage(text, role, ttfb = null, total = null) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${role}`;
+            
+            let html = `<p>${text}</p>`;
+            html += `<div class="timestamp">${new Date().toLocaleTimeString()}`;
+            if (ttfb !== null) {
+                html += ` • TTFB: ${ttfb.toFixed(0)}ms`;
+            }
+            html += '</div>';
+            
+            messageEl.innerHTML = html;
+            chatMessages.appendChild(messageEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Show typing indicator
+        function showTypingIndicator() {
+            const typingEl = document.createElement('div');
+            typingEl.className = 'message assistant';
+            typingEl.innerHTML = `
+                <div class="typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+            `;
+            chatMessages.appendChild(typingEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return typingEl;
+        }
+
+        // Update latency metrics
+        function updateMetrics(metrics) {
+            if (metrics.ttfb !== undefined && metrics.ttfb !== null) {
+                const ttfbVal = Math.round(metrics.ttfb);
+                document.getElementById('ttfb-display').textContent = `${ttfbVal}ms`;
+                document.getElementById('ttfb-display').className = 
+                    ttfbVal < 800 ? 'metric-value good' :
+                    ttfbVal < 1200 ? 'metric-value warning' : 'metric-value bad';
+                document.getElementById('llm-latency').textContent = `${ttfbVal}ms`;
+            }
+            if (metrics.total !== undefined && metrics.total !== null) {
+                const totalVal = Math.round(metrics.total);
+                document.getElementById('total-latency').textContent = `${totalVal}ms`;
+            }
+        }
+
+        // Text-to-Speech using Web Speech API
+        let speechSynthesis = window.speechSynthesis;
+        let isSpeaking = false;
+
+        function speakText(text) {
+            if (!speechSynthesis) {
+                console.log('TTS not supported');
+                return;
+            }
+
+            // Cancel any ongoing speech
+            speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+
+            // Try to use a natural voice
+            const voices = speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v => 
+                v.name.includes('Google') || 
+                v.name.includes('Microsoft') ||
+                v.name.includes('Natural')
+            ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+            
+            if (preferredVoice) {
+                utterance.voice = preferredVoice;
+            }
+
+            utterance.onstart = () => {
+                isSpeaking = true;
+                document.getElementById('tts-latency').textContent = 'Speaking...';
+            };
+
+            utterance.onend = () => {
+                isSpeaking = false;
+                document.getElementById('tts-latency').textContent = 'Done';
+            };
+
+            utterance.onerror = (e) => {
+                console.error('TTS Error:', e);
+                isSpeaking = false;
+            };
+
+            speechSynthesis.speak(utterance);
+        }
+
+        // Load voices (needed for some browsers)
+        if (speechSynthesis) {
+            speechSynthesis.onvoiceschanged = () => {
+                console.log('Voices loaded:', speechSynthesis.getVoices().length);
+            };
+        }
+
+        // Voice Input using Web Speech API (Real-time recognition)
+        let recognition = null;
+        let recognitionActive = false;
+
+        // Initialize Speech Recognition
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.error('Speech Recognition not supported');
+                voiceBtn.title = 'Speech Recognition not supported in this browser';
+                return null;
+            }
+
+            const rec = new SpeechRecognition();
+            rec.continuous = false;
+            rec.interimResults = true;
+            rec.lang = 'en-US';
+            rec.maxAlternatives = 1;
+
+            rec.onstart = () => {
+                recognitionActive = true;
+                voiceBtn.classList.add('recording');
+                waveformContainer.classList.add('active');
+                textInput.placeholder = 'Listening...';
+                document.getElementById('asr-latency').textContent = 'Listening...';
+            };
+
+            rec.onresult = (event) => {
+                let finalTranscript = '';
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                // Show interim results in input field
+                if (interimTranscript) {
+                    textInput.value = interimTranscript;
+                    textInput.style.fontStyle = 'italic';
+                }
+
+                // When we have a final result, send it
+                if (finalTranscript) {
+                    textInput.value = finalTranscript;
+                    textInput.style.fontStyle = 'normal';
+                    document.getElementById('asr-latency').textContent = 'Done';
+                    
+                    // Auto-send after getting final transcript
+                    setTimeout(() => {
+                        if (textInput.value.trim()) {
+                            sendTextQuery();
+                        }
+                    }, 300);
+                }
+            };
+
+            rec.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                recognitionActive = false;
+                voiceBtn.classList.remove('recording');
+                waveformContainer.classList.remove('active');
+                textInput.placeholder = 'Type your question or click the mic to speak...';
+                
+                if (event.error === 'not-allowed') {
+                    addMessage('🎤 Microphone access denied. Please allow microphone permissions.', 'assistant');
+                } else if (event.error === 'no-speech') {
+                    textInput.placeholder = 'No speech detected. Try again.';
+                } else {
+                    addMessage(`Speech error: ${event.error}`, 'assistant');
+                }
+            };
+
+            rec.onend = () => {
+                recognitionActive = false;
+                voiceBtn.classList.remove('recording');
+                waveformContainer.classList.remove('active');
+                textInput.placeholder = 'Type your question or click the mic to speak...';
+            };
+
+            return rec;
+        }
+
+        // Voice button - Click to toggle recording
+        voiceBtn.addEventListener('click', toggleVoiceRecording);
+
+        function toggleVoiceRecording() {
+            if (!recognition) {
+                recognition = initSpeechRecognition();
+            }
+
+            if (!recognition) {
+                addMessage('Speech Recognition is not supported in this browser. Please use Chrome or Edge.', 'assistant');
+                return;
+            }
+
+            if (recognitionActive) {
+                // Stop recording
+                recognition.stop();
+            } else {
+                // Start recording
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error('Recognition start error:', e);
+                    // If already started, stop and restart
+                    recognition.stop();
+                    setTimeout(() => recognition.start(), 100);
+                }
+            }
+        }
+
+        // Simple waveform animation when recording
+        function drawWaveform() {
+            if (!recognitionActive) return;
+
+            const canvas = waveformCanvas;
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            let offset = 0;
+            
+            function draw() {
+                if (!recognitionActive) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    return;
+                }
+
+                animationId = requestAnimationFrame(draw);
+                offset += 2;
+
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.beginPath();
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 2;
+
+                for (let x = 0; x < canvas.width; x++) {
+                    const y = canvas.height / 2 + Math.sin((x + offset) * 0.05) * 15 * Math.sin(Date.now() * 0.005);
+                    if (x === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
+            }
+
+            draw();
+        }
+
+        // Start waveform when recording
+        const originalAddRecording = voiceBtn.classList.add.bind(voiceBtn.classList);
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'class') {
+                    if (voiceBtn.classList.contains('recording')) {
+                        drawWaveform();
+                    }
+                }
+            });
+        });
+        observer.observe(voiceBtn, { attributes: true });
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendTextQuery);
+        textInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendTextQuery();
+            }
+        });
+    </script>
+</body>
+</html>
