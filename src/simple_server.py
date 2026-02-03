@@ -86,6 +86,44 @@ class SimplePipeline:
         # TTS disabled - using browser-based TTS instead
         # All local TTS options (Piper, Edge-TTS, pyttsx3, Coqui) failed on Windows
         self.tts = None
+        
+        # Preload models to avoid cold start latency
+        self._warmup_models()
+    
+    def _warmup_models(self):
+        """Preload models to eliminate cold start latency."""
+        if not self.retrieval_available:
+            return
+        
+        print("\n🔥 Warming up models...")
+        
+        try:
+            # 1. Warmup embedding model (dense search)
+            print("  ⏳ Loading sentence transformer...")
+            _ = self.hybrid_search.dense_searcher.model
+            print("  ✓ Sentence transformer ready")
+            
+            # 2. Warmup reranker model
+            print("  ⏳ Loading cross-encoder reranker...")
+            self.reranker.load_model()
+            print("  ✓ Cross-encoder ready")
+            
+            # 3. Load dense index
+            if self.hybrid_search.dense_searcher._index is None:
+                print("  ⏳ Loading dense index...")
+                self.hybrid_search.dense_searcher.load_index()
+                print("  ✓ Dense index loaded")
+            
+            # 4. Load sparse index
+            if self.hybrid_search.sparse_searcher._bm25 is None:
+                print("  ⏳ Loading sparse index...")
+                self.hybrid_search.sparse_searcher.load_index()
+                print("  ✓ Sparse index loaded")
+            
+            print("✅ Model warmup complete! Ready for fast queries.\n")
+            
+        except Exception as e:
+            print(f"⚠️  Warmup failed (models will load on first query): {e}\n")
     
     async def process_query(self, query: str, session_id: str = "default") -> SimpleResult:
         """Process a text query."""
