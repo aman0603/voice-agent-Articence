@@ -1,4 +1,4 @@
-export const API_BASE = 'http://localhost:8000';
+export const API_BASE = 'http://localhost:8002';
 
 export const EXAMPLE_QUERIES = [
   "What are the power redundancy modes?",

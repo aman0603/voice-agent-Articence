@@ -160,6 +160,39 @@ export default function App() {
     setMetrics(prev => ({ ...prev, tts: 'Done' }));
   };
 
+  const playAudioChunk = async (base64Audio) => {
+    try {
+      // Decode base64 to arrayBuffer
+      const binaryString = atob(base64Audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      // Create audio context if not exists
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Decode audio data
+      const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+      
+      // Create source and play
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+      
+      setMetrics(prev => ({ ...prev, tts: 'Playing (Kokoro)' }));
+      
+      // Update metrics when done
+      source.onended = () => {
+        setMetrics(prev => ({ ...prev, tts: 'Done' }));
+      };
+    } catch (error) {
+      console.error('Audio playback error:', error);
+    }
+  };
+
+
   const handleStop = () => {
     // Stop browser speech synthesis
     if (speechSynthesisRef.current) {
@@ -218,49 +251,53 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = '';
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        
+        buffer = lines.pop();
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
+          const trimmedLine = line.trim();
+          if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+          
+          try {
+            const data = JSON.parse(trimmedLine.slice(6));
+            
+            if (data.type === 'filler' || data.type === 'sentence') {
+              accumulatedText += data.text + ' ';
+              // Add to speech queue for Browser TTS
+              speechQueueRef.current.push(data.text);
+              processSpeechQueue();
               
-              if (data.type === 'filler' || data.type === 'sentence') {
-                accumulatedText += data.text + ' ';
-                setMessages(prev => {
-                  const newMsgs = [...prev];
-                  const last = newMsgs[newMsgs.length - 1];
-                  if (last && last.isStreaming) {
-                    last.text = accumulatedText;
-                  }
-                  return newMsgs;
-                });
-                
-                // Queue text for browser TTS
-                speechQueueRef.current.push(data.text);
-                processSpeechQueue();
-              } else if (data.type === 'ttfb') {
-                setMetrics(prev => ({ ...prev, ttfb: data.ttfb_ms }));
-              } else if (data.type === 'done') {
-                setMetrics(prev => ({ ...prev, total: data.total_latency_ms }));
-                setMessages(prev => {
-                  const newMsgs = [...prev];
-                  const last = newMsgs[newMsgs.length - 1];
-                  if (last) last.isStreaming = false;
-                  return newMsgs;
-                });
-              } else if (data.type === 'audio') { // Added for audio streaming
-                playAudioChunk(data.audio_base64);
-              }
-            } catch (e) {
-              console.warn('Chunk parse error', e);
+              setMessages(prev => {
+                const newMsgs = [...prev];
+                const last = newMsgs[newMsgs.length - 1];
+                if (last && last.isStreaming) {
+                  last.text = accumulatedText;
+                }
+                return newMsgs;
+              });
+            } else if (data.type === 'ttfb') {
+              setMetrics(prev => ({ ...prev, ttfb: data.ttfb_ms }));
+            } else if (data.type === 'done') {
+              setMetrics(prev => ({ ...prev, total: data.total_latency_ms }));
+              setMessages(prev => {
+                const newMsgs = [...prev];
+                const last = newMsgs[newMsgs.length - 1];
+                if (last) last.isStreaming = false;
+                return newMsgs;
+              });
+            } else if (data.type === 'audio') {
+              // playAudioChunk(data.audio_base64); // Disabled to prevent overlap with Browser TTS
             }
+          } catch (e) {
+            console.warn('Chunk parse error', e);
           }
         }
       }

@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     
     # API Keys
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
-    open_router_key: str = Field(default="", alias="OPEN_ROUTER", description="OpenRouter API key")
     nvidia_api_key: str = Field(default="", description="NVIDIA API key")
     
     # Model Settings
@@ -44,7 +43,7 @@ class Settings(BaseSettings):
     
     # Server
     host: str = Field(default="0.0.0.0", description="Server host")
-    port: int = Field(default=8000, description="Server port")
+    port: int = Field(default=8002, description="Server port")
     
     # Voice Optimization
     max_sentence_words: int = Field(default=15, description="Max words per sentence for TTS")
@@ -52,6 +51,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache

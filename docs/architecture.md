@@ -1,113 +1,75 @@
 # System Architecture
 
-## High-Level Architecture
+## High-Level Pipeline
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Voice RAG Pipeline                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌──────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐      │
-│  │  Audio   │───▶│  Streaming  │───▶│   Intent    │───▶│ Speculative │      │
-│  │  Input   │    │     ASR     │    │  Detection  │    │  Pre-fetch  │      │
-│  └──────────┘    └─────────────┘    └─────────────┘    └─────────────┘      │
-│       │                │                   │                  │              │
-│       │          Partial Transcripts       │          Early Retrieval        │
-│       │                │                   │                  │              │
-│       │                ▼                   ▼                  ▼              │
-│       │         ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│       │         │   Query     │    │   Filler    │    │   Hybrid    │       │
-│       │         │  Rewriter   │    │  Generator  │    │   Search    │       │
-│       │         └─────────────┘    └─────────────┘    └─────────────┘       │
-│       │                │                   │                  │              │
-│       │                │                   │          Dense + BM25          │
-│       │                ▼                   │                  │              │
-│       │         ┌─────────────┐            │                  ▼              │
-│       │         │  Reranker   │◀───────────┼──────────────────┘              │
-│       │         │(Cross-Enc)  │            │                                 │
-│       │         └─────────────┘            │                                 │
-│       │                │                   │                                 │
-│       │                ▼                   ▼                                 │
-│       │         ┌─────────────┐    ┌─────────────┐                          │
-│       │         │  Streaming  │    │    TTS      │                          │
-│       │         │     LLM     │───▶│   (Piper)   │────▶ Audio Output        │
-│       │         └─────────────┘    └─────────────┘                          │
-│       │                │                   ▲                                 │
-│       │                │                   │                                 │
-│       │                └───────────────────┘                                 │
-│       │                   Voice Optimizer                                    │
-│       │                                                                      │
-└───────┼──────────────────────────────────────────────────────────────────────┘
-        │
-        └────────────────────────── Metrics Tracking
+```mermaid
+graph TD
+    User((User)) -->|Voice Input| Browser[Browser ASR]
+    Browser -->|Text| Server[FastAPI Server]
+    
+    subgraph Backend [Backend Processing]
+        Server --> Intent[Intent Detection]
+        Intent --> Retrieval[Hybrid Retrieval]
+        
+        Retrieval -->|Dense+Sparse| Merger[RRF Merger]
+        Merger --> Rerank[Cross-Encoder Rerank]
+        
+        Rerank -->|Top Docs| LLM[LLM Generation]
+        
+        subgraph Models
+            LLM_N[NVIDIA Llama 3]
+            LLM_G[Google Gemini]
+        end
+        
+        LLM -->|Primary| LLM_N
+        LLM -.->|Fallback| LLM_G
+        
+        LLM_N -->|Stream Text| Optimizer[Voice Optimizer]
+        Optimizer -->|Sentences| TTS[Kokoro TTS]
+    end
+    
+    TTS -->|Audio Chunk| Server
+    Optimizer -->|Text Chunk| Server
+    
+    Server -->|SSE Stream| React[React Frontend]
+    React -->|Play| Speaker((Speaker))
 ```
 
-## Component Responsibilities
+## Component Breakdown
 
-### ASR Layer (Whisper)
-- **Streaming Transcription**: Emits partial transcripts every 300ms
-- **VAD Integration**: Detects end-of-speech for final transcript
-- **Low Latency**: Base model for speed, upgradeable to larger models
+### 1. Frontend Layer
+- **ASR (Speech-to-Text)**: Utilizes the browser's native Web Speech API (`webkitSpeechRecognition`) for zero-latency, client-side transcription.
+- **Protocol**: Server-Sent Events (SSE) allows multiplexed streaming of text tokens and binary audio chunks.
+- **Audio Handling**:
+  - Buffers incomnig audio chunks.
+  - Handles playback queue to prevent overlap.
+  - Supports fallback to `window.speechSynthesis` if needed.
 
-### Intent Detection
-- **Keyword Matching**: Fast domain detection (power, storage, network)
-- **Query Type Classification**: Troubleshooting, configuration, explanation
-- **Confidence Scoring**: Triggers speculative retrieval at 60%+
+### 2. Retrieval Layer (RAG)
+- **Hybrid Search**: Combines semantic understanding (FAISS/Dense) with keyword precision (BM25/Sparse).
+- **Reranker**: Uses a Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) to score the relevancy of retrieved documents against the query.
+- **Fusion**: Reciprocal Rank Fusion (RRF) merges results from disparate sources.
 
-### Query Rewriting
-- **Pronoun Resolution**: "the second one" → "second power redundancy mode"
-- **Context Tracking**: 5-turn sliding window
-- **Rule + LLM Hybrid**: Fast rules first, LLM fallback
+### 3. Generation Layer
+- **Primary LLM**: NVIDIA API (Llama 3 70B/8B) for fast, reasoning-capable responses.
+- **Fallback LLM**: Google Gemini Flash for reliability.
+- **Prompt Engineering**: System prompts specifically tuned for voice compatibility (short sentences, no special chars, phonetic-friendly).
 
-### Hybrid Retrieval
-- **Dense Search**: FAISS HNSW with 384-dim embeddings
-- **Sparse Search**: BM25 for exact terms, error codes
-- **RRF Fusion**: Reciprocal Rank Fusion for robust merging
+### 4. TTS Layer (Kokoro)
+- **Engine**: Kokoro-82M (82 Million Parameter) open-weight neural TTS.
+- **Implementation**: Local PyTorch execution on CPU.
+- **Quality**: High-fidelity, natural-sounding voice.
+- **Performance**: ~2-3s latency per sentence on standard CPU (optimized by parallel streaming text while audio generates).
 
-### Reranking
-- **Cross-Encoder**: ms-marco-MiniLM-L-6-v2
-- **Early Exit**: Stop at 0.9+ confidence
-- **Timeout**: 150ms max, fallback to hybrid scores
+## Latency Analysis
 
-### LLM (Gemini)
-- **Streaming**: Token-by-token generation
-- **Voice-Optimized Prompt**: Short sentences, simple language
-- **Context Window**: 3000 char from top-5 documents
+| Component | Technology | Latency (Approx) |
+|-----------|------------|------------------|
+| ASR | Web Speech API | < 100ms (Client) |
+| Network | HTTP/2 | 50-100ms |
+| Retrieval | Hybrid + Rerank | 100-200ms |
+| LLM (TTFB) | NVIDIA/Gemini | 200-300ms |
+| TTS Compute | Browser TTS | ~100ms / sent |
+| **Total Audio Start** | | **~500ms** |
 
-### Voice Optimization
-- **Sentence Breaking**: Max 15 words per sentence
-- **Phonetic Conversion**: RAID → raid, SFP+ → S-F-P plus
-- **Simplification**: ensure → make sure, utilize → use
-
-### TTS (Piper)
-- **Local Inference**: No API latency
-- **Streaming Output**: Chunk-by-chunk synthesis
-- **Natural Voice**: en_US-lessac-medium
-
-## Latency Budget
-
-| Component | Target | Notes |
-|-----------|--------|-------|
-| ASR Start to First Partial | 50ms | Streaming |
-| Intent Detection | 50ms | Parallel with ASR |
-| Speculative Retrieval | 100ms | Based on intent |
-| Query Rewriting | 50ms | Rule-based fast path |
-| Hybrid Search | 100ms | Dense + BM25 parallel |
-| Reranking | 150ms | Top-20 candidates |
-| LLM First Token | 100ms | Gemini Flash |
-| TTS First Byte | 50ms | Piper local |
-| **Total TTFB** | **<800ms** | With filler: ~550ms |
-
-## Failure Handling
-
-- **ASR Timeout**: Use partial transcript if final not received in 5s
-- **Retrieval Empty**: Return "I couldn't find information about that"
-- **Reranker Timeout**: Fall back to hybrid scores
-- **LLM Error**: Generic apology with retry suggestion
-- **TTS Error**: Return text response only
-
-## Caching Strategy (Bonus)
-
-- **Query Cache**: LRU cache for repeated queries (1000 entries)
-- **Embedding Cache**: Pre-computed embeddings for common terms
-- **Document Cache**: Recently accessed chunks in memory
+*Note: Use Browser TTS fallback for <1.0s latency.*

@@ -1,98 +1,96 @@
-# Zero-Latency Voice RAG Agent
+# Voice RAG Agent 🤖🎙️
 
-A production-grade Voice AI Agent for CCaaS platforms that achieves **TTFB < 800ms** for synthesized audio responses from large technical manuals.
+A production-grade Voice AI Agent that provides instant, voice-based answers from technical manuals.
 
-## 🚀 Quick Start
+## 🚀 Key Features
 
-```bash
+- **Zero-Latency**: Uses Browser TTS for instant feedback or Kokoro Neural TTS for high quality.
+- **RAG Engine**: Hybrid Search (FAISS + BM25) + Cross-Encoder Reranking for high accuracy.
+- **Dual LLM Support**: Defaults to **NVIDIA (Llama 3)**, falls back to **Google Gemini**.
+- **Modern Stack**: React 19 Frontend + FastAPI Backend + SSE Streaming.
+
+---
+
+## 🛠️ Quick Start
+
+### 1. Prerequisites
+- Python 3.11+
+- Node.js 18+
+- NVIDIA API Key (Recommended) or Google Gemini API Key.
+
+### 2. Setup Environment
+```powershell
+# Create virtual environment
+uv venv
+.venv\Scripts\activate
+
 # Install dependencies
-pip install -e .
+uv sync
 
-# Set up environment
+# Configure API Keys
 cp .env.example .env
-# Edit .env with your Gemini API key
-
-# Download and index manuals
-python scripts/download_manuals.py
-python scripts/build_index.py
-
-# Run the server
-python -m src.main
-## 🏗️ Architecture
-
-The system is split into a modern **Vite/React** frontend and a **FastAPI** backend.
-
-### 🚀 Quick Start
-
-#### 1. Start the Backend
-```bash
-# From the root directory
-$env:PYTHONPATH = "."
-uv run uvicorn src.simple_server:app --reload
+# Edit .env and add your NVIDIA_API_KEY or GEMINI_API_KEY
 ```
 
-#### 2. Start the Frontend
-```bash
-# In a new terminal
+### 3. Build Knowledge Base
+Download and index the manuals (files are in `data/manuals`):
+```powershell
+uv run python scripts/build_index.py
+```
+
+### 4. Run the System
+
+**Terminal 1: Backend**
+```powershell
+$env:PYTHONPATH = "."
+uv run uvicorn src.clean_server:app --reload --port 8002
+```
+
+**Terminal 2: Frontend**
+```powershell
 cd frontend-react
 npm install
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`.
-The backend provides a streaming API at `http://localhost:8000/query/stream`.
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🛠️ Key Technologies
-- **Frontend**: React 19, Vite 7, Tailwind CSS v4, Framer Motion, Lucide Icons.
-- **Backend**: FastAPI, OpenRouter (Trinity LLM), Web Speech API (Browser-side).
-- **Features**: SSE Streaming, Speculative Execution (Logic), Contextual Fillers, Voice Optimization.
+## 🏗️ Architecture
+
+### Frontend (React)
+- **Voice Capture**: Web Speech API for low-latency ASR.
+- **Protocol**: SSE (Server-Sent Events) for real-time text & audio streaming.
+- **Audio Playback**: 
+  - **Browser TTS**: Zero latency (Robotic).
+  - **Kokoro TTS**: Neural quality (3s latency on CPU), streamed as base64 audio chunks.
+
+### Backend (FastAPI)
+- **Intent Detection**: Classifies queries (Troubleshooting, Config, etc.).
+- **Retrieval**: 
+  - Dense Search (FAISS)
+  - Sparse Search (BM25)
+  - Reranker (Cross-Encoder)
+- **Generation**:
+  - **Primary**: NVIDIA API (Llama 3)
+  - **Fallback**: Google Gemini
+- **TTS**: Kokoro-82M (Local PyTorch Model).
 
 ---
 
-## 🏗️ Components Breakdown
-- `src/query/rewriter.py`: Handles conversational context and pronoun resolution.
-- `src/retrieval/`: Hybrid search (Dense + BM25) with cross-encoder reranking.
-- `src/voice/optimizer.py`: Post-processes LLM output for natural speech.
-- `src/generation/filler_generator.py`: Generates fillers to mask retrieval latency.
-- **Speculative Execution**: Starts retrieval from partial ASR transcripts
-- **Hybrid Search**: Dense vectors + BM25 with cross-encoder reranking  
-- **Voice Optimization**: Converts technical text to natural speech
-- **Filler Generation**: Eliminates perceived silence during processing
-
-## 📊 Latency Breakdown
-
-| Component | Target | Actual |
-|-----------|--------|--------|
-| ASR Processing | 300ms | - |
-| Query Rewriting | 50ms | - |
-| Hybrid Retrieval | 100ms | - |
-| Reranking | 150ms | - |
-| LLM First Token | 100ms | - |
-| TTS First Byte | 50ms | - |
-| **Total TTFB** | **<800ms** | - |
-
-## 🛠️ Tech Stack
-
-- **ASR**: Whisper (local)
-- **LLM**: Google Gemini
-- **TTS**: Piper (local)
-- **Vector DB**: FAISS
-- **Framework**: FastAPI + WebSockets
-
-## 📁 Project Structure
+## 📂 Project Structure
 
 ```
-src/
-├── asr/          # Streaming speech recognition
-├── query/        # Query rewriting & context
-├── retrieval/    # Hybrid search + reranking
-├── generation/   # LLM streaming responses
-├── voice/        # TTS optimization
-└── pipeline/     # Orchestration engine
+├── frontend-react/     # React Application
+├── src/
+│   ├── clean_server.py # Main FastAPI Server
+│   ├── config.py       # Configuration
+│   ├── retrieval/      # RAG Logic (FAISS/BM25)
+│   ├── generation/     # LLM Clients (NVIDIA/Gemini)
+│   └── voice/          # Kokoro TTS
+└── data/               # PDF Manuals & Index
 ```
 
 ## 📜 License
-
 MIT

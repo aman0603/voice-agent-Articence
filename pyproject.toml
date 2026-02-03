@@ -29,6 +29,8 @@ dependencies = [
     "rich>=13.7.0",
     "httpx>=0.26.0",
     "openai>=2.16.0",
+    "kokoro>=0.9.4",
+    "soundfile>=0.13.1",
 ]
 
 [project.optional-dependencies]

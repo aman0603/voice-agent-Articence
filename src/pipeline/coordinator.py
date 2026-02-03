@@ -179,8 +179,9 @@ class PipelineCoordinator:
         # Synthesize any remaining text
         remaining_text = "".join(response_chunks)
         if remaining_text:
-            optimized = self.voice_optimizer.optimize(remaining_text)
-            audio = await self.tts.synthesize(optimized)
+            # optimized = self.voice_optimizer.optimize(remaining_text)
+            # audio = await self.tts.synthesize(optimized)
+            pass # TTS disabled
             yield audio
         
         metrics.mark('tts_complete')
@@ -232,14 +233,13 @@ class PipelineCoordinator:
         response = await self.llm.generate(rewritten.rewritten, top_docs)
         metrics.mark('llm_complete')
         
-        # Voice optimization
-        optimized = self.voice_optimizer.optimize(response)
+        optimized = response  # Use response directly
         
         # Optional TTS
         audio_chunks = []
         if self.tts.is_available():
             metrics.mark('tts_start')
-            audio = await self.tts.synthesize(optimized)
+            audio = await self.tts.synthesize(response)
             audio_chunks.append(audio)
             metrics.mark('tts_complete')
         
