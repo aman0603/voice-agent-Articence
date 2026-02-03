@@ -1,11 +1,11 @@
-"""OpenRouter LLM client using Trinity model."""
+"""NVIDIA API client using Llama models."""
 
 import asyncio
 import time
 from typing import AsyncIterator, List, Optional
 from dataclasses import dataclass
 
-import httpx
+from openai import OpenAI, AsyncOpenAI
 
 from ..config import get_settings
 from ..retrieval import SearchResult
@@ -23,35 +23,45 @@ class GenerationChunk:
 VOICE_SYSTEM_PROMPT = """You're a Dell technical support assistant. Answer concisely using documentation context. Keep sentences under 15 words. Be direct and helpful."""
 
 
-class OpenRouterClient:
+class NvidiaClient:
     """
-    LLM client using OpenRouter API with Trinity model.
+    LLM client using NVIDIA API with Llama models.
     
-    Free tier with no rate limits for testing.
+    Supports various Llama models through NVIDIA's inference endpoint.
     """
     
-    #liquid/lfm-2.5-1.2b-instruct:free
-    def __init__(self, model: str = "liquid/lfm-2.5-1.2b-instruct:free"):
-        """Initialize OpenRouter client."""
+    def __init__(self, model: str = "meta/llama-3.1-8b-instruct"):
+        """Initialize NVIDIA client."""
         self.settings = get_settings()
         self.model_name = model
-        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.base_url = "https://integrate.api.nvidia.com/v1"
         self._client = None
+        self._async_client = None
     
     @property
     def api_key(self) -> str:
-        """Get OpenRouter API key."""
-        return self.settings.open_router_key
+        """Get NVIDIA API key."""
+        return self.settings.nvidia_api_key
     
     @property
-    def headers(self) -> dict:
-        """Get API headers."""
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "Voice RAG Agent"
-        }
+    def client(self) -> OpenAI:
+        """Lazy load synchronous OpenAI client."""
+        if self._client is None:
+            self._client = OpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key
+            )
+        return self._client
+    
+    @property
+    def async_client(self) -> AsyncOpenAI:
+        """Lazy load asynchronous OpenAI client."""
+        if self._async_client is None:
+            self._async_client = AsyncOpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key
+            )
+        return self._async_client
     
     async def generate_streaming(
         self,
@@ -77,54 +87,25 @@ class OpenRouterClient:
             {"role": "user", "content": f"Context:\n{context}\n\nQ: {query}\nA:"}
         ]
         
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.5,  # Higher = faster generation
-            "stream": True,
-            "top_p": 0.9  # Reduce search space for faster tokens
-        }
-        
         start_time = time.time()
         
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
-                    "POST", 
-                    self.api_url, 
-                    headers=self.headers, 
-                    json=payload
-                ) as response:
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        yield GenerationChunk(
-                            text=f"Error: {error_text.decode()[:100]}",
-                            is_complete=True
-                        )
-                        return
-                    
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data = line[6:]
-                            if data == "[DONE]":
-                                break
-                            
-                            try:
-                                import json
-                                chunk_data = json.loads(data)
-                                delta = chunk_data.get("choices", [{}])[0].get("delta", {})
-                                content = delta.get("content", "")
-                                
-                                if content:
-                                    elapsed_ms = int((time.time() - start_time) * 1000)
-                                    yield GenerationChunk(
-                                        text=content,
-                                        is_complete=False,
-                                        latency_ms=elapsed_ms
-                                    )
-                            except (json.JSONDecodeError, IndexError, KeyError):
-                                continue
+            response = await self.async_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.2,  # Lower temperature for consistency
+                stream=True
+            )
+            
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    elapsed_ms = int((time.time() - start_time) * 1000)
+                    yield GenerationChunk(
+                        text=chunk.choices[0].delta.content,
+                        is_complete=False,
+                        latency_ms=elapsed_ms
+                    )
             
             # Final chunk
             elapsed_ms = int((time.time() - start_time) * 1000)
@@ -156,26 +137,15 @@ class OpenRouterClient:
             {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"}
         ]
         
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.3
-        }
-        
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    self.api_url,
-                    headers=self.headers,
-                    json=payload
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    return f"Error: {response.status_code} - {response.text[:100]}"
+            response = await self.async_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.2
+            )
+            
+            return response.choices[0].message.content
                     
         except Exception as e:
             return f"I apologize, but I encountered an issue: {str(e)[:100]}"
@@ -211,4 +181,4 @@ class OpenRouterClient:
 
 
 # Alias for compatibility
-LLMClient = OpenRouterClient
+LLMClient = NvidiaClient

@@ -46,7 +46,7 @@ class LLMClient:
     Optimized for low-latency voice responses with streaming output.
     """
     
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         """Initialize LLM client."""
         self.settings = get_settings()
         self.model_name = model

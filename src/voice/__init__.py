@@ -2,6 +2,6 @@
 
 from .optimizer import VoiceOptimizer
 from .phonetic import PhoneticConverter
-from .tts_client import PiperTTSClient
+from .tts_client import Pyttsx3TTSClient
 
-__all__ = ["VoiceOptimizer", "PhoneticConverter", "PiperTTSClient"]
+__all__ = ["VoiceOptimizer", "PhoneticConverter", "Pyttsx3TTSClient"]

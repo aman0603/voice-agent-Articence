@@ -59,8 +59,14 @@ class SimplePipeline:
             print(f"Retrieval not available: {e}")
         
         try:
+            #add nvidia api key check
+            if self.settings.nvidia_api_key:
+                from .generation.nvidia_client import NvidiaClient
+                self.llm = NvidiaClient()
+                self.llm_available = True
+                print("LLM enabled: NVIDIA")
             # Prefer OpenRouter (free tier)
-            if self.settings.open_router_key:
+            elif self.settings.open_router_key:
                 from .generation.openrouter_client import OpenRouterClient
                 self.llm = OpenRouterClient()
                 self.llm_available = True
@@ -75,6 +81,11 @@ class SimplePipeline:
                 print("LLM disabled - no API key configured (using demo mode)")
         except Exception as e:
             print(f"LLM not available: {e}")
+        
+        
+        # TTS disabled - using browser-based TTS instead
+        # All local TTS options (Piper, Edge-TTS, pyttsx3, Coqui) failed on Windows
+        self.tts = None
     
     async def process_query(self, query: str, session_id: str = "default") -> SimpleResult:
         """Process a text query."""
@@ -176,7 +187,7 @@ class SimplePipeline:
         
         if self.llm_available and self.retrieval_available:
             try:
-                # Retrieval
+                # Retrieval - reduced from 20 to 10 for faster reranking
                 results = await self.hybrid_search.search(rewritten_query, top_k=20)
                 top_docs = await self.reranker.rerank_with_fallback(
                     rewritten_query, results, top_k=5
@@ -198,26 +209,37 @@ class SimplePipeline:
                         # Check for complete sentences
                         sentences = self._split_sentences(sentence_buffer)
                         if len(sentences) > 1:
-                            # Yield complete sentences, keep the last incomplete one
+                            # Yield complete sentences (skip voice optimization for browser TTS)
                             for sentence in sentences[:-1]:
-                                optimized = self.voice_optimizer.optimize(sentence)
-                                optimized = self.phonetic.convert(optimized)
+                                # Browser TTS doesn't need phonetic conversion - yield raw text
                                 yield {
                                     "type": "sentence",
-                                    "text": optimized,
+                                    "text": sentence,
                                     "is_final": False
                                 }
+                                
+                                # Immediately synthesize and yield audio (don't defer)
+                                # Edge-TTS is fast (~100-200ms), so per-sentence is fine
+                                if self.tts:
+                                    audio_result = await self._synthesize_audio_chunk(optimized)
+                                    if audio_result:
+                                        yield audio_result
                             sentence_buffer = sentences[-1]
                 
                 # Yield any remaining text
                 if sentence_buffer.strip():
-                    optimized = self.voice_optimizer.optimize(sentence_buffer)
-                    optimized = self.phonetic.convert(optimized)
+                    # Browser TTS doesn't need voice optimization
                     yield {
                         "type": "sentence",
-                        "text": optimized,
+                        "text": sentence_buffer,
                         "is_final": True
                     }
+                    
+                    # Synthesize audio for final sentence
+                    if self.tts:
+                        audio_result = await self._synthesize_audio_chunk(optimized)
+                        if audio_result:
+                            yield audio_result
                 
             except Exception as e:
                 print(f"LLM Streaming Error: {e}")
@@ -262,6 +284,22 @@ class SimplePipeline:
         # Split on sentence-ending punctuation followed by space or end
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s.strip() for s in sentences if s.strip()]
+    
+    async def _synthesize_audio_chunk(self, text: str):
+        """Synthesize audio for a text chunk asynchronously."""
+        try:
+            import base64
+            audio_bytes = await self.tts.synthesize(text)
+            if audio_bytes:
+                b64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+                return {
+                    "type": "audio",
+                    "data": b64_audio,
+                    "text": text
+                }
+        except Exception as e:
+            print(f"TTS synthesis error: {e}")
+        return None
     
     def _generate_demo_response(self, query: str, intent) -> str:
         """Generate a demo response based on intent detection."""

@@ -1,174 +1,161 @@
-"""Piper TTS client for local speech synthesis."""
+"""pyttsx3 TTS client for local speech synthesis."""
 
 import asyncio
-import subprocess
-import tempfile
-from pathlib import Path
-from typing import AsyncIterator, Optional, List
-import wave
 import io
+import wave
+from pathlib import Path
+from typing import AsyncIterator, Optional
+
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 
 from ..config import get_settings
 
 
-class PiperTTSClient:
+class Pyttsx3TTSClient:
     """
-    Local TTS client using Piper for fast speech synthesis.
+    Local TTS client using pyttsx3 (Windows SAPI voices).
     
-    Piper is optimized for low-latency local inference.
+    Advantages:
+    - Pure Python, no compilation needed
+    - Uses native Windows voices
+    - Works offline
+    - Fast synthesis
+    - No external API calls
     """
     
     def __init__(
         self, 
-        voice: Optional[str] = None,
-        model_dir: Optional[str] = None
+        voice: Optional[str] = None
     ):
-        """Initialize Piper TTS client."""
+        """Initialize pyttsx3 TTS client."""
         self.settings = get_settings()
-        self.voice = voice or self.settings.piper_voice
-        self.model_dir = Path(model_dir) if model_dir else Path("models/piper")
+        self.engine = None
         
-        self._piper_path = None
-        self._model_path = None
-    
-    def _find_piper(self) -> Optional[Path]:
-        """Find piper executable."""
-        # Check common locations
-        candidates = [
-            Path("piper"),
-            Path("piper.exe"),
-            Path("./piper/piper"),
-            Path("./piper/piper.exe"),
-        ]
+        if pyttsx3 is None:
+            print("pyttsx3 not installed. Install with: uv pip install pyttsx3")
+            return
         
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        
-        # Try to find in PATH
         try:
-            result = subprocess.run(
-                ["where" if self.settings.host == "windows" else "which", "piper"],
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                return Path(result.stdout.strip())
-        except Exception:
-            pass
-        
-        return None
+            self.engine = pyttsx3.init()
+            
+            # Configure voice properties
+            self.engine.setProperty('rate', 175)  # Speed (default is 200)
+            self.engine.setProperty('volume', 0.9)  # Volume (0.0 to 1.0)
+            
+            # Try to use a good quality voice
+            voices = self.engine.getProperty('voices')
+            if voices:
+                # Prefer Microsoft David or Zira (natural voices)
+                preferred = None
+                for v in voices:
+                    if 'David' in v.name or 'Zira' in v.name or 'Mark' in v.name:
+                        preferred = v
+                        break
+                
+                if preferred:
+                    self.engine.setProperty('voice', preferred.id)
+                    print(f"TTS voice: {preferred.name}")
+                else:
+                    print(f"TTS voice: {voices[0].name}")
+                    
+        except Exception as e:
+            print(f"Failed to initialize pyttsx3: {e}")
+            self.engine = None
+
+    async def synthesize(self, text: str) -> bytes:
+        """Synthesize speech from text using pyttsx3."""
+        if not self.engine or not text.strip():
+            return b""
+
+        try:
+            # Save to WAV file temporarily
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                output_path = tmp.name
+            
+            # Run synthesis in thread pool to avoid blocking
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._sync_synthesize, text, output_path)
+            
+            # Read the WAV file
+            if os.path.exists(output_path):
+                with open(output_path, 'rb') as f:
+                    audio_data = f.read()
+                
+                # Cleanup
+                try:
+                    os.unlink(output_path)
+                except:
+                    pass
+                
+                return audio_data
+            
+            return b""
+                
+        except Exception as e:
+            print(f"pyttsx3 synthesis failed: {e}")
+            return b""
+    
+    def _sync_synthesize(self, text: str, output_path: str):
+        """Synchronous synthesis helper."""
+        self.engine.save_to_file(text, output_path)
+        self.engine.runAndWait()
+
+    async def synthesize_streaming(self, text_iterator: AsyncIterator[str]) -> AsyncIterator[bytes]:
+        """
+        Stream audio bytes from a text stream.
+        """
+        if not self.engine:
+            return
+
+        # Synthesize sentence-by-sentence
+        async for text_chunk in text_iterator:
+            if not text_chunk.strip():
+                continue
+            
+            audio_bytes = await self.synthesize(text_chunk)
+            if audio_bytes:
+                yield audio_bytes
+
+    def is_available(self) -> bool:
+        return self.engine is not None
+
+
+# Keep EdgeTTSClient as fallback
+class EdgeTTSClient:
+    """Edge TTS client (fallback)."""
+    
+    def __init__(self, voice: Optional[str] = None):
+        try:
+            import edge_tts
+            self.voice_name = voice or "en-US-AriaNeural"
+            self.available = True
+        except ImportError:
+            self.available = False
     
     async def synthesize(self, text: str) -> bytes:
-        """
-        Synthesize speech from text.
+        if not self.available or not text.strip():
+            return b""
         
-        Args:
-            text: Text to synthesize
-            
-        Returns:
-            WAV audio bytes
-        """
         try:
-            # Try using piper-tts Python package first
-            from piper import PiperVoice
+            import edge_tts
+            import io
             
-            voice = PiperVoice.load(str(self.model_dir / f"{self.voice}.onnx"))
-            
-            # Synthesize to in-memory buffer
+            communicate = edge_tts.Communicate(text, self.voice_name)
             audio_buffer = io.BytesIO()
-            
-            with wave.open(audio_buffer, 'wb') as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(22050)
-                
-                for audio_bytes in voice.synthesize_stream_raw(text):
-                    wav_file.writeframes(audio_bytes)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_buffer.write(chunk["data"])
             
             return audio_buffer.getvalue()
-            
-        except ImportError:
-            # Fall back to subprocess if piper package not installed
-            return await self._synthesize_subprocess(text)
-    
-    async def _synthesize_subprocess(self, text: str) -> bytes:
-        """Synthesize using piper subprocess."""
-        piper_path = self._find_piper()
-        if not piper_path:
-            raise RuntimeError("Piper executable not found")
-        
-        # Create temp file for output
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-            output_path = tmp.name
-        
-        try:
-            # Run piper
-            process = await asyncio.create_subprocess_exec(
-                str(piper_path),
-                '--model', str(self.model_dir / f"{self.voice}.onnx"),
-                '--output_file', output_path,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            await process.communicate(input=text.encode('utf-8'))
-            
-            # Read output
-            with open(output_path, 'rb') as f:
-                return f.read()
-                
-        finally:
-            # Cleanup
-            Path(output_path).unlink(missing_ok=True)
-    
-    async def synthesize_streaming(
-        self, 
-        text_chunks: List[str]
-    ) -> AsyncIterator[bytes]:
-        """
-        Synthesize speech from text chunks, yielding audio as it's ready.
-        
-        For streaming output where we don't want to wait for full synthesis.
-        """
-        for chunk in text_chunks:
-            if chunk.strip():
-                audio = await self.synthesize(chunk)
-                yield audio
-    
-    async def synthesize_with_timing(
-        self, 
-        text: str
-    ) -> tuple[bytes, float]:
-        """
-        Synthesize speech and return with timing info.
-        
-        Returns:
-            Tuple of (audio_bytes, duration_seconds)
-        """
-        import time
-        
-        start = time.time()
-        audio = await self.synthesize(text)
-        synthesis_time = time.time() - start
-        
-        # Calculate audio duration from WAV
-        try:
-            with io.BytesIO(audio) as audio_buffer:
-                with wave.open(audio_buffer, 'rb') as wav_file:
-                    frames = wav_file.getnframes()
-                    rate = wav_file.getframerate()
-                    duration = frames / rate
-        except Exception:
-            duration = len(text.split()) / 2.5  # Estimate from word count
-        
-        return audio, duration
+        except Exception as e:
+            print(f"Edge TTS error: {e}")
+            return b""
     
     def is_available(self) -> bool:
-        """Check if Piper TTS is available."""
-        try:
-            from piper import PiperVoice
-            return True
-        except ImportError:
-            return self._find_piper() is not None
+        return self.available

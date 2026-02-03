@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     # API Keys
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
     open_router_key: str = Field(default="", alias="OPEN_ROUTER", description="OpenRouter API key")
+    nvidia_api_key: str = Field(default="", description="NVIDIA API key")
     
     # Model Settings
     whisper_model: str = Field(default="base", description="Whisper model size")

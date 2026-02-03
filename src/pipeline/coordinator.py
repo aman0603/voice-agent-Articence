@@ -9,7 +9,7 @@ from ..asr import StreamingASR, TranscriptEvent, IntentDetector
 from ..query import QueryRewriter, ContextManager
 from ..retrieval import HybridMerger, CrossEncoderReranker, SearchResult
 from ..generation import LLMClient, FillerGenerator
-from ..voice import VoiceOptimizer, PiperTTSClient
+from ..voice import VoiceOptimizer, Pyttsx3TTSClient
 from ..config import get_settings
 from .metrics import LatencyMetrics, MetricsTracker
 
@@ -48,7 +48,7 @@ class PipelineCoordinator:
         self.llm = LLMClient()
         self.filler = FillerGenerator()
         self.voice_optimizer = VoiceOptimizer()
-        self.tts = PiperTTSClient()
+        self.tts = Pyttsx3TTSClient()
         
         # Metrics
         self.metrics_tracker = MetricsTracker()

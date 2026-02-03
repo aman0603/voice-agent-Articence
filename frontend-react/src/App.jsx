@@ -22,9 +22,12 @@ export default function App() {
   
   const chatEndRef = useRef(null);
   const recognitionRef = useRef(null);
-  const speechSynthesisRef = window.speechSynthesis;
+  const abortControllerRef = useRef(null);
+  
+  // Speech synthesis refs (browser TTS)
+  const speechSynthesisRef = useRef(window.speechSynthesis);
   const speechQueueRef = useRef([]);
-  const isSpeakingQueueRef = useRef(false);
+  const isSpeakingRef = useRef(false);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -77,9 +80,10 @@ export default function App() {
     }
   }, []);
 
+
   const speakSentence = (text) => {
     return new Promise((resolve) => {
-      if (!speechSynthesisRef || !text.trim()) {
+      if (!speechSynthesisRef.current || !text.trim()) {
         resolve();
         return;
       }
@@ -88,7 +92,7 @@ export default function App() {
       utterance.rate = 1.05;
       utterance.pitch = 1.0;
       
-      const voices = speechSynthesisRef.getVoices();
+      const voices = speechSynthesisRef.current.getVoices();
       const preferredVoice = voices.find(v => 
         v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Natural')
       ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
@@ -97,7 +101,7 @@ export default function App() {
       
       utterance.onstart = () => {
         setIsSpeaking(true);
-        setMetrics(prev => ({ ...prev, tts: 'Speaking...' }));
+        setMetrics(prev => ({ ...prev, tts: 'Speaking (Browser)' }));
       };
       
       utterance.onend = () => {
@@ -109,22 +113,45 @@ export default function App() {
         resolve();
       };
       
-      speechSynthesisRef.speak(utterance);
+      speechSynthesisRef.current.speak(utterance);
     });
   };
 
   const processSpeechQueue = async () => {
-    if (isSpeakingQueueRef.current) return;
-    isSpeakingQueueRef.current = true;
+    if (isSpeakingRef.current) return;
+    isSpeakingRef.current = true;
     
     while (speechQueueRef.current.length > 0) {
       const sentence = speechQueueRef.current.shift();
       await speakSentence(sentence);
     }
     
-    isSpeakingQueueRef.current = false;
+    isSpeakingRef.current = false;
     setIsSpeaking(false);
     setMetrics(prev => ({ ...prev, tts: 'Done' }));
+  };
+
+  const handleStop = () => {
+    // Stop browser speech synthesis
+    if (speechSynthesisRef.current) {
+      speechSynthesisRef.current.cancel();
+    }
+    speechQueueRef.current = [];
+    isSpeakingRef.current = false;
+    
+    // Abort the fetch request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // Reset UI state
+    setIsSpeaking(false);
+    setIsProcessing(false);
+    setMetrics(prev => ({ ...prev, tts: 'Stopped' }));
+    
+    // Remove streaming message
+    setMessages(prev => prev.filter(m => !m.isStreaming));
   };
 
   const handleSend = async (textToSubmit = inputValue) => {
@@ -133,20 +160,28 @@ export default function App() {
 
     setInputValue('');
     setIsProcessing(true);
+    
+    // Stop any ongoing playback/requests
+    handleStop();
+    
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+    
+    // Reset speech queue
     speechQueueRef.current = [];
-    speechSynthesisRef?.cancel();
+    isSpeakingRef.current = false;
+    setIsSpeaking(false);
     
     // Add user message
     setMessages(prev => [...prev, { role: 'user', text }]);
-    
-    // Add temporary assistant message for streaming
     setMessages(prev => [...prev, { role: 'assistant', text: '', isStreaming: true }]);
     
     try {
       const response = await fetch(`${API_BASE}/query/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text, session_id: 'react-session' })
+        body: JSON.stringify({ query: text, session_id: 'react-session' }),
+        signal: abortControllerRef.current?.signal
       });
 
       if (!response.ok) throw new Error('Server unreachable');
@@ -178,6 +213,7 @@ export default function App() {
                   return newMsgs;
                 });
                 
+                // Queue text for browser TTS
                 speechQueueRef.current.push(data.text);
                 processSpeechQueue();
               } else if (data.type === 'ttfb') {
@@ -190,6 +226,8 @@ export default function App() {
                   if (last) last.isStreaming = false;
                   return newMsgs;
                 });
+              } else if (data.type === 'audio') { // Added for audio streaming
+                playAudioChunk(data.audio_base64);
               }
             } catch (e) {
               console.warn('Chunk parse error', e);
@@ -198,13 +236,19 @@ export default function App() {
         }
       }
     } catch (error) {
-      console.error('Fetch error:', error);
-      setMessages(prev => [
-        ...prev.filter(m => !m.isStreaming),
-        { role: 'assistant', text: `Error: ${error.message}. Please check if the backend is running.` }
-      ]);
+      if (error.name === 'AbortError') {
+        console.log('Request was cancelled');
+      } else {
+        console.error('Fetch error:', error);
+        setMessages(prev => [
+          ...prev.filter(m => !m.isStreaming),
+          { role: 'assistant', text: `Error: ${error.message}. Please check if the backend is running.` }
+        ]);
+      }
+      setIsSpeaking(false);
     } finally {
       setIsProcessing(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -254,9 +298,11 @@ export default function App() {
           inputValue={inputValue}
           setInputValue={setInputValue}
           handleSend={handleSend}
+          handleStop={handleStop}
           toggleRecording={toggleRecording}
           isRecording={isRecording}
           isProcessing={isProcessing}
+          isSpeaking={isSpeaking}
           clearChat={clearChat}
         />
 

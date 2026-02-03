@@ -1,15 +1,17 @@
 import React from 'react';
-import { Mic, Send, Trash2 } from 'lucide-react';
+import { Mic, Send, Trash2, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../utils/cn';
 
 export function InputBar({ 
   inputValue, 
   setInputValue, 
-  handleSend, 
+  handleSend,
+  handleStop, 
   toggleRecording, 
   isRecording, 
-  isProcessing, 
+  isProcessing,
+  isSpeaking, 
   clearChat 
 }) {
   return (
@@ -74,6 +76,19 @@ export function InputBar({
             >
               <Trash2 size={18} />
             </button>
+
+            {/* Stop Button - shows when speaking or processing */}
+            {(isSpeaking || isProcessing) && (
+              <button 
+                type="button"
+                onClick={handleStop}
+                className="p-3 rounded-xl bg-red-600 text-white hover:bg-red-500 transition-all shadow-lg shadow-red-500/30 animate-pulse"
+                title="Stop"
+              >
+                <Square size={20} fill="currentColor" />
+              </button>
+            )}
+
             <button 
               type="button"
               onClick={() => handleSend()}
