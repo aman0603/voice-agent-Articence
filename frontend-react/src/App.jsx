@@ -32,18 +32,27 @@ export default function App() {
   // Initialize Speech Recognition
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
+    
+    if (!SpeechRecognition) {
+      console.warn('Speech Recognition API not supported in this browser');
+      setMetrics(prev => ({ ...prev, asr: 'Not Supported' }));
+      return;
+    }
+    
+    try {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = true;
       rec.lang = 'en-US';
       
       rec.onstart = () => {
+        console.log('Speech recognition started');
         setIsRecording(true);
         setMetrics(prev => ({ ...prev, asr: 'Listening...' }));
       };
       
       rec.onresult = (event) => {
+        console.log('Speech recognition result event:', event);
         let interimTranscript = '';
         let finalTranscript = '';
         
@@ -57,26 +66,46 @@ export default function App() {
         }
         
         if (interimTranscript) {
+          console.log('Interim transcript:', interimTranscript);
           setInputValue(interimTranscript);
         }
         
         if (finalTranscript) {
+          console.log('Final transcript:', finalTranscript);
           setInputValue(finalTranscript);
+          setMetrics(prev => ({ ...prev, asr: 'Done' }));
           handleSend(finalTranscript);
         }
       };
       
       rec.onerror = (event) => {
-        console.error('Speech error:', event.error);
+        console.error('Speech recognition error:', event.error, event);
         setIsRecording(false);
-        setMetrics(prev => ({ ...prev, asr: 'Error' }));
+        
+        let errorMsg = 'Error';
+        if (event.error === 'not-allowed') {
+          errorMsg = 'Mic Blocked';
+          alert('Microphone access denied. Please allow microphone permissions in your browser settings.');
+        } else if (event.error === 'no-speech') {
+          errorMsg = 'No Speech';
+        }
+        
+        setMetrics(prev => ({ ...prev, asr: errorMsg }));
       };
       
       rec.onend = () => {
+        console.log('Speech recognition ended');
         setIsRecording(false);
+        setMetrics(prev => ({ ...prev, asr: 'Ready' }));
       };
       
       recognitionRef.current = rec;
+      console.log('Speech recognition initialized successfully');
+      setMetrics(prev => ({ ...prev, asr: 'Ready' }));
+      
+    } catch (error) {
+      console.error('Failed to initialize speech recognition:', error);
+      setMetrics(prev => ({ ...prev, asr: 'Init Failed' }));
     }
   }, []);
 
@@ -253,11 +282,28 @@ export default function App() {
   };
 
   const toggleRecording = () => {
+    if (!recognitionRef.current) {
+      console.error('Speech recognition not available');
+      alert('Voice input is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+    
     if (isRecording) {
+      console.log('Stopping speech recognition');
       recognitionRef.current?.stop();
     } else {
-      speechSynthesisRef?.cancel();
-      recognitionRef.current?.start();
+      console.log('Starting speech recognition');
+      // Stop any ongoing speech
+      if (speechSynthesisRef.current) {
+        speechSynthesisRef.current.cancel();
+      }
+      
+      try {
+        recognitionRef.current?.start();
+      } catch (error) {
+        console.error('Failed to start speech recognition:', error);
+        alert('Failed to start voice input. Please check microphone permissions.');
+      }
     }
   };
 
